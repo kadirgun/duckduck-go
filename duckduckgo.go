@@ -2,6 +2,7 @@ package duckduckgo
 
 import (
 	"fmt"
+	"html"
 	"regexp"
 	"time"
 
@@ -32,8 +33,6 @@ func (d *DuckDuckGo) Search(query string, count int) ([]SearchResult, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println("Script Link:", scriptLink)
 
 	results := make([]SearchResult, 0)
 
@@ -100,8 +99,8 @@ func (d *DuckDuckGo) getResults(scriptLink string) (*ScriptResult, error) {
 		}
 
 		result.Items = append(result.Items, SearchResult{
-			Title:       gjson.Get(item.String(), "t").String(),
-			Description: gjson.Get(item.String(), "a").String(),
+			Title:       html.UnescapeString(gjson.Get(item.String(), "t").String()),
+			Description: html.UnescapeString(gjson.Get(item.String(), "a").String()),
 			Link:        gjson.Get(item.String(), "u").String(),
 		})
 	}
