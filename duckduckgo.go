@@ -3,25 +3,46 @@ package duckduckgo
 import (
 	"fmt"
 	"html"
+	"io"
+	"net/url"
 	"regexp"
 	"time"
 
+	http "github.com/bogdanfinn/fhttp"
+	tls_client "github.com/bogdanfinn/tls-client"
+	"github.com/bogdanfinn/tls-client/profiles"
 	"github.com/tidwall/gjson"
-	"resty.dev/v3"
 )
 
 type DuckDuckGo struct {
-	client *resty.Client
+	client tls_client.HttpClient
 }
 
+var preloadRe = regexp.MustCompile(`(?s)<link[^>]*\bid="deep_preload_link"[^>]*\bhref="(https?://[^"]+)"`)
+
 func New() *DuckDuckGo {
-	client := resty.New()
-	client.SetHeader("User-Agent", "PostmanRuntime/7.45.0")
-	client.SetHeader("Accept", "*/*")
-	client.SetHeader("Accept-Language", "en-US,en;q=0.9")
-	client.SetHeader("Accept-Encoding", "gzip, deflate")
-	client.SetHeader("Connection", "keep-alive")
-	client.SetHeader("Cache-Control", "no-cache")
+	headers := http.Header{}
+
+	headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36")
+	headers.Set("Accept", "*/*")
+	headers.Set("Accept-Language", "en-US,en;q=0.9")
+	headers.Set("Accept-Encoding", "gzip, deflate, br")
+	headers.Set("Connection", "keep-alive")
+	headers.Set("Cache-Control", "no-cache")
+	headers.Set("Sec-Ch-Ua", `"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"`)
+
+	options := []tls_client.HttpClientOption{
+		tls_client.WithTimeoutSeconds(30),
+		tls_client.WithClientProfile(profiles.Chrome_133_PSK),
+		tls_client.WithNotFollowRedirects(),
+		tls_client.WithDefaultHeaders(headers),
+		tls_client.WithDebug(),
+	}
+
+	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
+	if err != nil {
+		panic(err)
+	}
 
 	return &DuckDuckGo{
 		client: client,
@@ -62,16 +83,23 @@ type ScriptResult struct {
 }
 
 func (d *DuckDuckGo) getResults(scriptLink string) (*ScriptResult, error) {
-	req := d.client.R()
-	req.SetHeader("Referer", "https://duckduckgo.com/")
-	req.SetHeader("Host", "links.duckduckgo.com")
-
-	resp, err := req.Get(scriptLink)
+	req, err := http.NewRequest("GET", scriptLink, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	js := resp.String()
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	jsBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	js := string(jsBytes)
 
 	re := regexp.MustCompile(`DDG\.pageLayout\.load\('d',(\[.*?\])\)`)
 	match := re.FindStringSubmatch(js)
@@ -109,24 +137,53 @@ func (d *DuckDuckGo) getResults(scriptLink string) (*ScriptResult, error) {
 }
 
 func (d *DuckDuckGo) getScriptLink(query string) (string, error) {
-	req := d.client.R()
-	req.SetQueryParam("q", query)
-	req.SetQueryParam("t", "h_")
-	req.SetQueryParam("ia", "web")
+	urlValues := url.Values{
+		"q":  {query},
+		"t":  {"h_"},
+		"ia": {"web"},
+	}
 
-	res, err := req.Get("https://duckduckgo.com")
+	reqUrl := url.URL{
+		Scheme:   "https",
+		Host:     "duckduckgo.com",
+		RawQuery: urlValues.Encode(),
+	}
+
+	fmt.Println("Request URL:", reqUrl.String())
+
+	req, err := http.NewRequest("GET", reqUrl.String(), nil)
+	if err != nil {
+		return "", err
+	}
+
+	res, err := d.client.Do(req)
 
 	if err != nil {
 		return "", err
 	}
 
-	if res.StatusCode() != 200 {
-		return "", fmt.Errorf("unexpected status code: %d", res.StatusCode())
+	if res.StatusCode != 200 {
+		return "", fmt.Errorf("unexpected status code: %d", res.StatusCode)
+	}
+	defer res.Body.Close()
+
+	contentBytes, err := io.ReadAll(res.Body)
+	if err != nil {
+		return "", err
 	}
 
-	content := res.String()
-	re := regexp.MustCompile(`<link id="deep_preload_link" rel="preload" as="script" href="(https?://[^\s/$.?#].[^\s]*)">`)
-	matches := re.FindStringSubmatch(content)
+	content := string(contentBytes)
+
+	link, err := extractScriptLink(content)
+	if err != nil {
+		return "", err
+	}
+
+	return link, nil
+}
+
+func extractScriptLink(content string) (string, error) {
+	matches := preloadRe.FindStringSubmatch(content)
 	if len(matches) < 2 {
 		return "", fmt.Errorf("script link not found")
 	}
