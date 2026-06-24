@@ -23,7 +23,7 @@ var preloadRe = regexp.MustCompile(`(?s)<link[^>]*\bid="deep_preload_link"[^>]*\
 func New() *DuckDuckGo {
 	headers := http.Header{}
 
-	headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36")
+	headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
 	headers.Set("Accept", "*/*")
 	headers.Set("Accept-Language", "en-US,en;q=0.9")
 	headers.Set("Accept-Encoding", "gzip, deflate, br")
@@ -33,7 +33,7 @@ func New() *DuckDuckGo {
 
 	options := []tls_client.HttpClientOption{
 		tls_client.WithTimeoutSeconds(30),
-		tls_client.WithClientProfile(profiles.Chrome_133_PSK),
+		tls_client.WithClientProfile(profiles.Chrome_146_PSK),
 		tls_client.WithNotFollowRedirects(),
 		tls_client.WithDefaultHeaders(headers),
 		tls_client.WithDebug(),
