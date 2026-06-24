@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/bogdanfinn/fhttp v0.6.8
+	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v5 v5.2.1
 	github.com/tidwall/gjson v1.18.0
 )

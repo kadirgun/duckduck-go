@@ -6,12 +6,20 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/joho/godotenv"
 	duckduckgo "github.com/kadirgun/duckduck-go"
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 )
 
 func main() {
+	// Load .env file if exists
+	if err := godotenv.Load(); err != nil {
+		slog.Debug(".env file not found, using environment variables")
+	}
+
+	apiKey := os.Getenv("API_KEY")
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -23,6 +31,16 @@ func main() {
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS("*"))
+
+	// API key middleware (only if API_KEY is set)
+	if apiKey != "" {
+		e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
+			Validator: func(c *echo.Context, key string, _ middleware.ExtractorSource) (bool, error) {
+				return key == apiKey, nil
+			},
+		}))
+		slog.Info("API key authentication enabled")
+	}
 
 	// Health check
 	e.GET("/health", func(c *echo.Context) error {
