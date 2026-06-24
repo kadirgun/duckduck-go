@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 
 	http "github.com/bogdanfinn/fhttp"
@@ -101,13 +102,10 @@ func (d *DuckDuckGo) getResults(scriptLink string) (*ScriptResult, error) {
 
 	js := string(jsBytes)
 
-	re := regexp.MustCompile(`DDG\.pageLayout\.load\('d',(\[.*?\])\)`)
-	match := re.FindStringSubmatch(js)
-	if len(match) < 2 {
+	arrayStr := extractJSONArray(js, `DDG.pageLayout.load('d',`)
+	if arrayStr == "" {
 		return nil, fmt.Errorf("no results found")
 	}
-
-	arrayStr := match[1]
 
 	items := gjson.Parse(arrayStr).Array()
 	if len(items) == 0 {
@@ -189,4 +187,55 @@ func extractScriptLink(content string) (string, error) {
 	}
 
 	return matches[1], nil
+}
+
+// extractJSONArray finds the first JSON array after the given marker in JS content
+// using bracket counting instead of regex to handle nested structures correctly.
+func extractJSONArray(js, marker string) string {
+	idx := strings.Index(js, marker)
+	if idx == -1 {
+		return ""
+	}
+
+	start := idx + len(marker)
+	if start >= len(js) || js[start] != '[' {
+		return ""
+	}
+
+	depth := 0
+	inString := false
+	escaped := false
+
+	for i := start; i < len(js); i++ {
+		ch := js[i]
+
+		if escaped {
+			escaped = false
+			continue
+		}
+
+		if ch == '\\' && inString {
+			escaped = true
+			continue
+		}
+
+		if ch == '"' {
+			inString = !inString
+			continue
+		}
+
+		if !inString {
+			switch ch {
+			case '[':
+				depth++
+			case ']':
+				depth--
+				if depth == 0 {
+					return js[start : i+1]
+				}
+			}
+		}
+	}
+
+	return ""
 }
