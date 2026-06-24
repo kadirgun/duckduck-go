@@ -1,0 +1,9 @@
+services:
+  app:
+    image: ghcr.io/kadirgun/duckduck-go:latest
+    container_name: duckduckgo-server
+    ports:
+      - "5242:5242"
+    env_file:
+      - .env
+    restart: unless-stopped
