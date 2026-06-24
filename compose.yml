@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/kadirgun/duckduck-go:latest
+    build: .
     container_name: duckduckgo-server
     ports:
       - "5242:5242"

@@ -37,7 +37,6 @@ func New() *DuckDuckGo {
 		tls_client.WithClientProfile(profiles.Chrome_146_PSK),
 		tls_client.WithNotFollowRedirects(),
 		tls_client.WithDefaultHeaders(headers),
-		tls_client.WithDebug(),
 	}
 
 	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)

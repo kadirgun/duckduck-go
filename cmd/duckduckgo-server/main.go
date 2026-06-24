@@ -96,6 +96,8 @@ func searchHandler(c *echo.Context) error {
 		})
 	}
 
+	c.Logger().Info("search completed", "query", req.Query, "count", len(results))
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"query":   req.Query,
 		"count":   len(results),
