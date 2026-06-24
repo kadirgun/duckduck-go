@@ -35,6 +35,9 @@ func main() {
 	// API key middleware (only if API_KEY is set)
 	if apiKey != "" {
 		e.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
+			Skipper: func(c *echo.Context) bool {
+				return c.Path() == "/health"
+			},
 			Validator: func(c *echo.Context, key string, _ middleware.ExtractorSource) (bool, error) {
 				return key == apiKey, nil
 			},
