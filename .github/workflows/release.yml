@@ -29,26 +29,30 @@ jobs:
           go-version: "1.25"
           cache: true
 
-      - name: Build binary
+      - name: Build binaries
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          BINARY="duckduckgo-server-${{ matrix.goos }}-${{ matrix.goarch }}"
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            BINARY="${BINARY}.exe"
-          fi
-          go build -o "$BINARY" ./cmd/duckduckgo-server
+          for CMD in server cli; do
+            BINARY="duckduckgo-${CMD}-${{ matrix.goos }}-${{ matrix.goarch }}"
+            if [ "${{ matrix.goos }}" = "windows" ]; then
+              BINARY="${BINARY}.exe"
+            fi
+            go build -o "$BINARY" "./cmd/duckduckgo-${CMD}"
+          done
 
-      - name: Upload release asset
+      - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          BINARY="duckduckgo-server-${{ matrix.goos }}-${{ matrix.goarch }}"
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            BINARY="${BINARY}.exe"
-          fi
-          gh release upload "${{ github.event.release.tag_name }}" "$BINARY" --clobber
+          for CMD in server cli; do
+            BINARY="duckduckgo-${CMD}-${{ matrix.goos }}-${{ matrix.goarch }}"
+            if [ "${{ matrix.goos }}" = "windows" ]; then
+              BINARY="${BINARY}.exe"
+            fi
+            gh release upload "${{ github.event.release.tag_name }}" "$BINARY" --clobber
+          done
 
   docker:
     name: Build and push Docker image

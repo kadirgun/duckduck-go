@@ -7,6 +7,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v5 v5.2.1
 	github.com/tidwall/gjson v1.18.0
+	github.com/urfave/cli/v3 v3.10.1
 )
 
 require (
