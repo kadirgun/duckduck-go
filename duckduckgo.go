@@ -16,15 +16,33 @@ import (
 )
 
 type DuckDuckGo struct {
-	client tls_client.HttpClient
+	client        tls_client.HttpClient
+	proxy         string
+	timeout       time.Duration
+	userAgent     string
+	retryCount    int
+	proxyFallback bool
+	directClient  tls_client.HttpClient
 }
 
 var preloadRe = regexp.MustCompile(`(?s)<link[^>]*\bid="deep_preload_link"[^>]*\bhref="(https?://[^"]+)"`)
 
-func New() *DuckDuckGo {
+func New(opts ...Option) *DuckDuckGo {
+	d := &DuckDuckGo{
+		timeout: 30 * time.Second,
+	}
+
+	for _, opt := range opts {
+		opt(d)
+	}
+
 	headers := http.Header{}
 
-	headers.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36")
+	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
+	if d.userAgent != "" {
+		ua = d.userAgent
+	}
+	headers.Set("User-Agent", ua)
 	headers.Set("Accept", "*/*")
 	headers.Set("Accept-Language", "en-US,en;q=0.9")
 	headers.Set("Accept-Encoding", "gzip, deflate, br")
@@ -32,25 +50,49 @@ func New() *DuckDuckGo {
 	headers.Set("Cache-Control", "no-cache")
 	headers.Set("Sec-Ch-Ua", `"Chromium";v="142", "Google Chrome";v="142", "Not_A Brand";v="99"`)
 
-	options := []tls_client.HttpClientOption{
-		tls_client.WithTimeoutSeconds(30),
+	tlsOptions := []tls_client.HttpClientOption{
 		tls_client.WithClientProfile(profiles.Chrome_146_PSK),
 		tls_client.WithNotFollowRedirects(),
 		tls_client.WithDefaultHeaders(headers),
+		tls_client.WithTimeoutSeconds(int(d.timeout.Seconds())),
 	}
 
-	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
+	if d.proxy != "" {
+		tlsOptions = append(tlsOptions, tls_client.WithProxyUrl(d.proxy))
+	}
+
+	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), tlsOptions...)
 	if err != nil {
 		panic(err)
 	}
 
-	return &DuckDuckGo{
-		client: client,
+	dd := &DuckDuckGo{
+		client:        client,
+		proxy:         d.proxy,
+		timeout:       d.timeout,
+		userAgent:     d.userAgent,
+		retryCount:    d.retryCount,
+		proxyFallback: d.proxyFallback,
 	}
+
+	if d.proxy != "" && d.proxyFallback {
+		directOpts := []tls_client.HttpClientOption{
+			tls_client.WithClientProfile(profiles.Chrome_146_PSK),
+			tls_client.WithNotFollowRedirects(),
+			tls_client.WithDefaultHeaders(headers),
+			tls_client.WithTimeoutSeconds(int(d.timeout.Seconds())),
+		}
+		directClient, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), directOpts...)
+		if err == nil {
+			dd.directClient = directClient
+		}
+	}
+
+	return dd
 }
 
 func (d *DuckDuckGo) Search(query string, count int) ([]SearchResult, error) {
-	scriptLink, err := d.getScriptLink(query)
+	scriptLink, err := d.retryGetScriptLink(query)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +175,38 @@ func (d *DuckDuckGo) getResults(scriptLink string) (*ScriptResult, error) {
 	return result, nil
 }
 
+func (d *DuckDuckGo) retryGetScriptLink(query string) (string, error) {
+	var lastErr error
+
+	for i := range d.retryCount + 1 {
+		if i > 0 {
+			time.Sleep(time.Second)
+		}
+
+		link, err := d.getScriptLink(query)
+		if err == nil {
+			return link, nil
+		}
+
+		lastErr = err
+	}
+
+	// proxy fallback: son denemede de başarısız olduysa direkt bağlantı dene
+	if d.proxy != "" && d.proxyFallback && d.directClient != nil {
+		link, err := d.getScriptLinkWithClient(query, d.directClient)
+		if err == nil {
+			return link, nil
+		}
+	}
+
+	return "", lastErr
+}
+
 func (d *DuckDuckGo) getScriptLink(query string) (string, error) {
+	return d.getScriptLinkWithClient(query, d.client)
+}
+
+func (d *DuckDuckGo) getScriptLinkWithClient(query string, client tls_client.HttpClient) (string, error) {
 	urlValues := url.Values{
 		"q":  {query},
 		"t":  {"h_"},
@@ -153,7 +226,7 @@ func (d *DuckDuckGo) getScriptLink(query string) (string, error) {
 		return "", err
 	}
 
-	res, err := d.client.Do(req)
+	res, err := client.Do(req)
 
 	if err != nil {
 		return "", err
